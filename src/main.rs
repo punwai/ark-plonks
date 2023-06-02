@@ -6,6 +6,17 @@ use ark_relations::r1cs::Field;
 use ark_std::{Zero, One};
 use std::{ops::{Mul, Sub, Neg}, time::Instant};
 
+macro_rules! timed_exec {
+    ($msg:expr, $func:expr) => {
+        {
+            let start = Instant::now();
+            let result = $func;
+            let elapsed = start.elapsed();
+            println!("{} took: {} ms", $msg, elapsed.as_millis());
+            result
+        }
+    };
+}
 
 struct TrustedSetupParameters {
     t: Vec<G>
@@ -243,89 +254,114 @@ fn round_3(
     // This is incorrect, you cannot compute the multiplication like this?
     // A way that you can do this is to 
 
-    let a_big = extend_lagrange_basis(n, a, fft_cofactor);
-    let b_big = extend_lagrange_basis(n, b, fft_cofactor);
-    let c_big = extend_lagrange_basis(n, c, fft_cofactor);
-    let qm_big = extend_lagrange_basis(n, &statement.qm, fft_cofactor);
-    let ql_big = extend_lagrange_basis(n, &statement.ql, fft_cofactor);
-    let qr_big = extend_lagrange_basis(n, &statement.qr, fft_cofactor);
-    let qo_big = extend_lagrange_basis(n, &statement.qo, fft_cofactor);
-    let qc_big = extend_lagrange_basis(n, &statement.qc, fft_cofactor);
-    let pi_big = extend_lagrange_basis(n, public_inputs, fft_cofactor);
-    let z_big = extend_lagrange_basis(n, z_evals, fft_cofactor);
-    let s1_big = extend_lagrange_basis(n, &statement.s_sig1, fft_cofactor);
-    let s2_big = extend_lagrange_basis(n, &statement.s_sig2, fft_cofactor);
-    let s3_big = extend_lagrange_basis(n, &statement.s_sig3, fft_cofactor);
-
-    println!("{:?}", qm_big.len());
-    println!("{:?}", c_big.len());
-
-    for i in 0..(group_order * 4) {
-        let eval = a_big[i] * b_big[i] * qm_big[i]
-            + a_big[i] * ql_big[i]
-            + b_big[i] * qr_big[i]
-            + c_big[i] * qo_big[i]
-            + pi_big[i]
-            + qc_big[i];
-        quotient.push(eval);
-    }
+    let (
+        a_big,
+        b_big,
+        c_big,
+        qm_big,
+        ql_big,
+        qr_big,
+        qo_big,
+        qc_big,
+        pi_big,
+        z_big ,
+        s1_big,
+        s2_big,
+        s3_big
+    ) = timed_exec!("Lagrange Bases", (
+        extend_lagrange_basis(n, a, fft_cofactor),
+        extend_lagrange_basis(n, b, fft_cofactor),
+        extend_lagrange_basis(n, c, fft_cofactor),
+        extend_lagrange_basis(n, &statement.qm, fft_cofactor),
+        extend_lagrange_basis(n, &statement.ql, fft_cofactor),
+        extend_lagrange_basis(n, &statement.qr, fft_cofactor),
+        extend_lagrange_basis(n, &statement.qo, fft_cofactor),
+        extend_lagrange_basis(n, &statement.qc, fft_cofactor),
+        extend_lagrange_basis(n, public_inputs, fft_cofactor),
+        extend_lagrange_basis(n, z_evals, fft_cofactor),
+        extend_lagrange_basis(n, &statement.s_sig1, fft_cofactor),
+        extend_lagrange_basis(n, &statement.s_sig2, fft_cofactor),
+        extend_lagrange_basis(n, &statement.s_sig3, fft_cofactor),
+    ));
 
     let mut left_check = vec![];
     let mut right_check = vec![];
-
     let quarter_domain = GeneralEvaluationDomain::<F>::new(group_order * 4).unwrap();
     let quarter_root = quarter_domain.group_gen();
-
     let schwazip = |a, b| a + b * beta + gamma;
 
-    for i in 0..(group_order * 4) {
-        let eval = schwazip(a_big[i], quarter_root * fft_cofactor)
-                   * schwazip(b_big[i], quarter_root * F::from(2) * fft_cofactor)
-                   * schwazip(c_big[i], quarter_root * F::from(3) * fft_cofactor) * z_big[i];
-        left_check.push(eval);
-        let eval = schwazip(a_big[i], s1_big[i])
-                   * schwazip(b_big[i], s2_big[i])
-                   * schwazip(c_big[i], s3_big[i]) * z_big[(i + 4) % (group_order * 4)];
-        right_check.push(eval);
-    }
     let mut t_eval = vec![];
-
-    // Compute ZH_big
     let mut ZH_big = vec![];
-    let mut root = quarter_root;
-    for _ in 0..(group_order * 4) {
-        ZH_big.push(
-            (quarter_root * fft_cofactor).pow(vec![(group_order - 1) as u64])
-        );
-        root *= quarter_root;
-    }
-
-    let mut L0 = vec![F::one()];
-    L0.extend(&vec![F::zero(); group_order - 1]);
-    let L0_big = extend_lagrange_basis(n, &L0, fft_cofactor);
-
     let mut permutation_first_row = vec![];
-    for i in 0..(group_order * 4) {
-        permutation_first_row.push(
-            (z_big[i] - F::one()) * L0_big[i]
+            
+
+    timed_exec!(
+        "Round 3 calculation",
+        {
+            for i in 0..(group_order * 4) {
+                let eval = a_big[i] * b_big[i] * qm_big[i]
+                    + a_big[i] * ql_big[i]
+                    + b_big[i] * qr_big[i]
+                    + c_big[i] * qo_big[i]
+                    + pi_big[i]
+                    + qc_big[i];
+                quotient.push(eval);
+            }
+            for i in 0..(group_order * 4) {
+                let eval = schwazip(a_big[i], quarter_root * fft_cofactor)
+                           * schwazip(b_big[i], quarter_root * F::from(2) * fft_cofactor)
+                           * schwazip(c_big[i], quarter_root * F::from(3) * fft_cofactor) * z_big[i];
+                left_check.push(eval);
+                let eval = schwazip(a_big[i], s1_big[i])
+                           * schwazip(b_big[i], s2_big[i])
+                           * schwazip(c_big[i], s3_big[i]) * z_big[(i + 4) % (group_order * 4)];
+                right_check.push(eval);
+            }
+
+            let mut root = quarter_root;
+            for _ in 0..(group_order * 4) {
+                ZH_big.push(
+                    (quarter_root * fft_cofactor).pow(vec![(group_order - 1) as u64])
+                );
+                root *= quarter_root;
+            }
+
+            let mut L0 = vec![F::one()];
+            L0.extend(&vec![F::zero(); group_order - 1]);
+            let L0_big = extend_lagrange_basis(n, &L0, fft_cofactor);
+        
+            for i in 0..(group_order * 4) {
+                permutation_first_row.push(
+                    (z_big[i] - F::one()) * L0_big[i]
+                )
+            }
+        
+            for i in 0..(group_order * 4) {
+                t_eval.push(
+                    (quotient[i] + alpha * &(left_check[i] - &right_check[i]) + alpha * alpha * permutation_first_row[i]) / ZH_big[i]
+                );
+            }
+        }
+    );
+
+    let (t1, t2, t3) = timed_exec!("Round 3 FFT", {
+        let t_coeffs = quarter_domain.ifft(&t_eval);
+        (
+            domain.fft(&t_coeffs[..group_order]),
+            domain.fft(&t_coeffs[group_order..(group_order * 2)]),
+            domain.fft(&t_coeffs[(group_order * 2)..(group_order * 3)])
         )
-    }
+    });
 
-    for i in 0..(group_order * 4) {
-        t_eval.push(
-            (quotient[i] + alpha * &(left_check[i] - &right_check[i]) + alpha * alpha * permutation_first_row[i]) / ZH_big[i]
-        );
-    }
-
-    let t_coeffs = quarter_domain.ifft(&t_eval);
-    let t1 = domain.fft(&t_coeffs[..group_order]);
-    let t2 = domain.fft(&t_coeffs[group_order..(group_order * 2)]);
-    let t3 = domain.fft(&t_coeffs[(group_order * 2)..(group_order * 3)]);
+    let (t_lo_commit, t_mid_commit, t_hi_commit) 
+        = timed_exec!("Round 3 MSM", (
+            eval_trusted(&t1, statement), eval_trusted(&t2, statement), eval_trusted(&t3, statement)
+        ));
     
     Round3Message {
-        t_lo_commit: eval_trusted(&t1, statement),
-        t_mid_commit: eval_trusted(&t2, statement),
-        t_hi_commit: eval_trusted(&t3, statement)
+        t_lo_commit,
+        t_mid_commit,
+        t_hi_commit,
     }
 }
 
