@@ -459,27 +459,29 @@ fn main() {
 
     let circuit_size = 2_u64.pow(K) as usize;
 
-    let statement = timed_exec!("Setup", setup(
-        circuit_size as u64,
-        to_f(vec![0; circuit_size]), // qm,
-        to_f(vec![0; circuit_size]), // ql,
-        to_f(vec![0; circuit_size]), // qr,
-        to_f(vec![0; circuit_size]), // qo, 
-        to_f(vec![0; circuit_size]), // qc
-    ));
-
-    let a = to_f(vec![2; circuit_size]);
-    let b = to_f(vec![2; circuit_size]);
-    let c = to_f(vec![4; circuit_size]);
-    let public_inputs = to_f(vec![0; circuit_size]);
-
-    let mut witness = a.clone();
-    witness.extend(a);
-    witness.extend(b);
-    witness.extend(c);
-    let r1_msg = timed_exec!("Round 1", round_1(&witness, &statement, &mut transcript));
-    let r2_msg = timed_exec!("Round 2", round_2(&witness, &statement, &mut transcript));
-    let r3_msg = timed_exec!("Round 3", round_3(&witness, &statement, &public_inputs, &mut transcript));
-    let r4_msg = timed_exec!("Round 4", round_4(&witness, &statement, &mut transcript));
-    let r5_msg = timed_exec!("Round 5", round_5(&statement, &r4_msg, &mut transcript));
+    timed_exec!("Overall Execution", || {
+        let statement = timed_exec!("Setup", setup(
+            circuit_size as u64,
+            to_f(vec![0; circuit_size]), // qm,
+            to_f(vec![0; circuit_size]), // ql,
+            to_f(vec![0; circuit_size]), // qr,
+            to_f(vec![0; circuit_size]), // qo, 
+            to_f(vec![0; circuit_size]), // qc
+        ));
+    
+        let a = to_f(vec![2; circuit_size]);
+        let b = to_f(vec![2; circuit_size]);
+        let c = to_f(vec![4; circuit_size]);
+        let public_inputs = to_f(vec![0; circuit_size]);
+    
+        let mut witness = a.clone();
+        witness.extend(a);
+        witness.extend(b);
+        witness.extend(c);
+        let r1_msg = timed_exec!("Round 1", round_1(&witness, &statement, &mut transcript));
+        let r2_msg = timed_exec!("Round 2", round_2(&witness, &statement, &mut transcript));
+        let r3_msg = timed_exec!("Round 3", round_3(&witness, &statement, &public_inputs, &mut transcript));
+        let r4_msg = timed_exec!("Round 4", round_4(&witness, &statement, &mut transcript));
+        let r5_msg = timed_exec!("Round 5", round_5(&statement, &r4_msg, &mut transcript));
+    });
 }
