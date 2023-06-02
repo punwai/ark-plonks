@@ -459,15 +459,16 @@ fn main() {
 
     let circuit_size = 2_u64.pow(K) as usize;
 
+    let statement = timed_exec!("Setup", setup(
+        circuit_size as u64,
+        to_f(vec![0; circuit_size]), // qm,
+        to_f(vec![0; circuit_size]), // ql,
+        to_f(vec![0; circuit_size]), // qr,
+        to_f(vec![0; circuit_size]), // qo, 
+        to_f(vec![0; circuit_size]), // qc
+    ));
+
     timed_exec!("Overall Execution", || {
-        let statement = timed_exec!("Setup", setup(
-            circuit_size as u64,
-            to_f(vec![0; circuit_size]), // qm,
-            to_f(vec![0; circuit_size]), // ql,
-            to_f(vec![0; circuit_size]), // qr,
-            to_f(vec![0; circuit_size]), // qo, 
-            to_f(vec![0; circuit_size]), // qc
-        ));
     
         let a = to_f(vec![2; circuit_size]);
         let b = to_f(vec![2; circuit_size]);
