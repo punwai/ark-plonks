@@ -468,21 +468,24 @@ fn main() {
         to_f(vec![0; circuit_size]), // qc
     ));
 
-    timed_exec!("Overall Execution", || {
-    
-        let a = to_f(vec![2; circuit_size]);
-        let b = to_f(vec![2; circuit_size]);
-        let c = to_f(vec![4; circuit_size]);
-        let public_inputs = to_f(vec![0; circuit_size]);
-    
-        let mut witness = a.clone();
-        witness.extend(a);
-        witness.extend(b);
-        witness.extend(c);
-        let r1_msg = timed_exec!("Round 1", round_1(&witness, &statement, &mut transcript));
-        let r2_msg = timed_exec!("Round 2", round_2(&witness, &statement, &mut transcript));
-        let r3_msg = timed_exec!("Round 3", round_3(&witness, &statement, &public_inputs, &mut transcript));
-        let r4_msg = timed_exec!("Round 4", round_4(&witness, &statement, &mut transcript));
-        let r5_msg = timed_exec!("Round 5", round_5(&statement, &r4_msg, &mut transcript));
-    });
+    let a = to_f(vec![2; circuit_size]);
+    let b = to_f(vec![2; circuit_size]);
+    let c = to_f(vec![4; circuit_size]);
+    let public_inputs = to_f(vec![0; circuit_size]);
+
+    let mut witness = a.clone();
+    witness.extend(a);
+    witness.extend(b);
+    witness.extend(c);
+
+    let start = Instant::now();
+
+    let r1_msg = timed_exec!("Round 1", round_1(&witness, &statement, &mut transcript));
+    let r2_msg = timed_exec!("Round 2", round_2(&witness, &statement, &mut transcript));
+    let r3_msg = timed_exec!("Round 3", round_3(&witness, &statement, &public_inputs, &mut transcript));
+    let r4_msg = timed_exec!("Round 4", round_4(&witness, &statement, &mut transcript));
+    let r5_msg = timed_exec!("Round 5", round_5(&statement, &r4_msg, &mut transcript));
+
+    let elapsed = start.elapsed();
+    println!("Overall execution took: {} ms", elapsed.as_millis());
 }
