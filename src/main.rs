@@ -2,6 +2,7 @@ use ark_ec::{scalar_mul::variable_base::{VariableBaseMSM}, bls12::G1Prepared, Gr
 use ark_poly::{univariate::DensePolynomial, GeneralEvaluationDomain, EvaluationDomain, DenseUVPolynomial, domain};
 use ark_bls12_381::{G1Projective as G, Fr as F, G1Affine};
 use ark_std::rand::distributions::Distribution;
+use ark_relations::r1cs::Field;
 use ark_std::{Zero, One};
 
 struct TrustedSetupParameters {
@@ -18,7 +19,7 @@ struct ProvingStatement {
     pub s_sig1: DensePolynomial<F>,
     pub s_sig2: DensePolynomial<F>,
     pub s_sig3: DensePolynomial<F>,
-    pub srs: TrustedSetupParameters,
+    pub srs: TrustedSetupParameters
 }
 
 struct Round1Message {
@@ -89,7 +90,7 @@ fn setup(
         s_sig1,
         s_sig2,
         s_sig3,
-        srs: tst
+        srs: tst,
     }
 }
 
@@ -117,13 +118,13 @@ fn round_1(witness: &Vec<F>, statement: &ProvingStatement) -> Round1Message {
     }
 }
 
-// Takes a bunch of coefficients and performs
-fn extend_lagrange_basis(evals: &Vec<F>) -> Vec<F> {
+// Takes a bunch of coefficients and extends the basis by 4x
+fn extend_lagrange_basis(evals: &[F], cofactor: &F) -> Vec<F> {
     // Check that 
     let n = evals.len();
     let domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
     let group_order = domain.size();
-    let mut coeffs = domain.ifft(evals);
+    let mut coeffs = (domain.ifft(evals)).into_iter().map(|x| x * cofactor).collect::<Vec<_>>();
     coeffs.extend(vec![F::zero(); group_order * 3]);
     let domain = GeneralEvaluationDomain::<F>::new(group_order * 4).unwrap();
     domain.fft(&coeffs)
@@ -152,27 +153,99 @@ fn round_3(
     witness: &Vec<F>,
     statement: &ProvingStatement,
     public_inputs: &Vec<F>,
-    alpha: &F
+    z_evals: &Vec<F>,
+    alpha: &F,
+    beta: &F,
+    gamma: &F,
+    fft_cofactor: &F,
 ) -> Round3Message {
     let n = statement.n as usize;
     let a = &witness[..n];
     let b = &witness[n..(2 * n)];
     let c = &witness[(2 * n)..(3 * n)];
-    let domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
 
-    let mut fixing = vec![];
+    let domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
+    let group_order = domain.size();
+
+    let mut quotient = vec![];
     // This is incorrect, you cannot compute the multiplication like this?
     // A way that you can do this is to 
-    for i in 0..n {
-        let eval = a[i] * b[i] * statement.qm[i]
-            + a[i] * statement.ql[i]
-            + b[i] * statement.qr[i]
-            + c[i] * statement.qo[i]
-            + public_inputs[i]
-            + statement.qc[i];
-        fixing.push(eval);
+
+    let a_big = extend_lagrange_basis(a, fft_cofactor);
+    let b_big = extend_lagrange_basis(b, fft_cofactor);
+    let c_big = extend_lagrange_basis(c, fft_cofactor);
+    let ql_big = extend_lagrange_basis(&statement.ql, fft_cofactor);
+    let qr_big = extend_lagrange_basis(&statement.qr, fft_cofactor);
+    let qo_big = extend_lagrange_basis(&statement.qo, fft_cofactor);
+    let qc_big = extend_lagrange_basis(&statement.qc, fft_cofactor);
+    let pi_big = extend_lagrange_basis(public_inputs, fft_cofactor);
+    let z_big = extend_lagrange_basis(z_evals, fft_cofactor);
+    let s1_big = extend_lagrange_basis(&statement.s_sig1, fft_cofactor);
+    let s2_big = extend_lagrange_basis(&statement.s_sig2, fft_cofactor);
+    let s3_big = extend_lagrange_basis(&statement.s_sig3, fft_cofactor);
+
+    for i in 0..(group_order * 4) {
+        let eval = a_big[i] * b_big[i] * statement.qm[i]
+            + a_big[i] * ql_big[i]
+            + b_big[i] * qr_big[i]
+            + c_big[i] * qo_big[i]
+            + pi_big[i]
+            + qc_big[i];
+        quotient.push(eval);
     }
-    // = domain.ifft(&fixing);
+
+    let mut left_check = vec![];
+    let mut right_check = vec![];
+
+    let quarter_domain = GeneralEvaluationDomain::<F>::new(group_order * 4).unwrap();
+    let quarter_root = quarter_domain.group_gen();
+
+    let schwazip = |a, b| a + b * beta + gamma;
+
+    for i in 0..(group_order * 4) {
+        let eval = schwazip(a_big[i], quarter_root * fft_cofactor)
+                   * schwazip(b_big[i], quarter_root * F::from(2) * fft_cofactor)
+                   * schwazip(c_big[i], quarter_root * F::from(3) * fft_cofactor) * z_big[i];
+        left_check.push(eval);
+        let eval = schwazip(a_big[i], s1_big[i])
+                   * schwazip(b_big[i], s2_big[i])
+                   * schwazip(c_big[i], s3_big[i]) * z_big[(i + 4) % (group_order * 4)];
+        right_check.push(eval);
+    }
+    let mut t_eval = vec![];
+
+    // Compute ZH_big
+    let mut ZH_big = vec![];
+    let mut root = quarter_root;
+    for _ in 0..(group_order * 4) {
+        ZH_big.push(
+            (quarter_root * fft_cofactor).pow(vec![(group_order - 1) as u64])
+        );
+        root *= quarter_root;
+    }
+
+    let mut L0 = vec![F::one()];
+    L0.extend(&vec![F::zero(); group_order - 1]);
+    let L0_big = extend_lagrange_basis(&L0, fft_cofactor);
+
+    let mut permutation_first_row = vec![];
+    for i in 0..(group_order * 4) {
+        permutation_first_row.push(
+            (z_big[i] - F::one()) * L0_big[i]
+        )
+    }
+
+    for i in 0..(group_order * 4) {
+        t_eval.push(
+            (quotient[i] + alpha * &(left_check[i] - &right_check[i]) + alpha * alpha * permutation_first_row[i]) / ZH_big[i]
+        );
+    }
+
+    let go = group_order as usize;
+    let t_coeffs = quarter_domain.ifft(&t_eval);
+    let t1 = domain.fft(&t_coeffs[..go]);
+    let t2 = domain.fft(&t_coeffs[go..(go* 2)]);
+    let t3 = domain.fft(&t_coeffs[(group_order * 2)..(group_order * 3)]);
     
     Round3Message {
         t_lo_commit: G::generator(),
