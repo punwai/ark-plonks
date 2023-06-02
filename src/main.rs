@@ -444,6 +444,9 @@ macro_rules! timed_exec {
 
 
 fn main() {
+    // CHANGE THIS TO GET BETTER BENCHMARKS
+    const K: u32 = 17;
+
     let mut transcript = Transcript::new();
     transcript.alpha = F::from(123);
     transcript.beta = F::from(12345);
@@ -454,19 +457,21 @@ fn main() {
 
     let to_f = |x: Vec<u64>| x.into_iter().map(|x| F::from(x)).collect::<Vec<F>>();
 
+    let circuit_size = 2_u64.pow(K) as usize;
+
     let statement = timed_exec!("Setup", setup(
-        131072,
-        to_f(vec![0; 131072]), // qm,
-        to_f(vec![0; 131072]), // ql,
-        to_f(vec![0; 131072]), // qr,
-        to_f(vec![0; 131072]), // qo, 
-        to_f(vec![0; 131072]), // qc
+        circuit_size as u64,
+        to_f(vec![0; circuit_size]), // qm,
+        to_f(vec![0; circuit_size]), // ql,
+        to_f(vec![0; circuit_size]), // qr,
+        to_f(vec![0; circuit_size]), // qo, 
+        to_f(vec![0; circuit_size]), // qc
     ));
 
-    let a = to_f(vec![2; 131072]);
-    let b = to_f(vec![2; 131072]);
-    let c = to_f(vec![4; 131072]);
-    let public_inputs = to_f(vec![0; 131072]);
+    let a = to_f(vec![2; circuit_size]);
+    let b = to_f(vec![2; circuit_size]);
+    let c = to_f(vec![4; circuit_size]);
+    let public_inputs = to_f(vec![0; circuit_size]);
 
     let mut witness = a.clone();
     witness.extend(a);
